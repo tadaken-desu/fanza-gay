@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { WorkListing } from "@/components/WorkListing";
 import {
+  MIN_WORKS_FOR_CIRCLE_PAGE,
   formatYen,
-  getCircles,
+  getCirclesWithPage,
   getCvs,
   getStats,
   getTagsOf,
@@ -12,15 +13,19 @@ import {
 
 type Props = { params: Promise<{ slug: string }> };
 
+/**
+ * 作品が MIN_WORKS_FOR_CIRCLE_PAGE 件以上のサークルだけ静的生成する
+ * (1作品だけのサークルは内容が薄く、検索流入も期待できないため)。
+ */
 export function generateStaticParams() {
-  return getCircles().map((c) => ({ slug: c.slug }));
+  return getCirclesWithPage().map((c) => ({ slug: c.slug }));
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const works = getWorksByCircle(slug);
   const circle = works[0]?.circle;
-  if (!circle) return {};
+  if (!circle || works.length < MIN_WORKS_FOR_CIRCLE_PAGE) return {};
 
   const s = getStats(works);
   const saleLabel = s.onSale > 0 ? `【セール中${s.onSale}作品】` : "";
@@ -37,6 +42,9 @@ export default async function CirclePage({ params }: Props) {
   const works = getWorksByCircle(slug);
   const circle = works[0]?.circle;
   if (!circle) notFound();
+
+  // 1作品だけのサークルは専用ページを持たない。URL を知っている人・古いリンクはトップの絞り込みへ
+  if (works.length < MIN_WORKS_FOR_CIRCLE_PAGE) redirect(`/?circle=${slug}`);
 
   const s = getStats(works);
 

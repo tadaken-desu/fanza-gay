@@ -1,6 +1,7 @@
 "use client";
 
-import { favoriteKey, useFavorites, type FavoriteKind } from "@/lib/favorites";
+import { favoriteKey, type FavoriteKind } from "@/lib/favorite-keys";
+import { useFavorites } from "@/lib/favorites";
 
 const KIND_LABEL: Record<FavoriteKind, string> = {
   cv: "CV",

@@ -1,82 +1,48 @@
-import Image from "next/image";
 import Link from "next/link";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { WorkCover } from "@/components/WorkCover";
 import { tagLabel } from "@/lib/tags";
 import type { Work } from "@/lib/types";
-import { formatYen, isAtLowestPrice, isDroppedToday, isOnSale } from "@/lib/works";
-
-/** id から安定した数値を作る(プレースホルダーの色・波形用) */
-function hashOf(id: string): number {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 100000;
-  return h;
-}
-
-/**
- * カバー画像。サムネイルがある作品は実画像、ない作品のみ波形風の代替ビジュアル。
- * 画像は FANZA の 560x420(4:3)なので、枠も 4:3 に揃える。
- */
-function Cover({ work }: { work: Work }) {
-  if (work.thumbnailUrl) {
-    return (
-      <div className="relative aspect-[4/3] overflow-hidden bg-surface">
-        <Image
-          src={work.thumbnailUrl}
-          alt=""
-          fill
-          sizes="(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 100vw"
-          className="object-cover transition duration-300 group-hover:scale-[1.03]"
-        />
-      </div>
-    );
-  }
-  return <WaveCover work={work} />;
-}
-
-/** 画像がない作品の代替ビジュアル。音声作品らしく波形風のバーを描く。 */
-function WaveCover({ work }: { work: Work }) {
-  const h = hashOf(work.id);
-  const hue = h % 360;
-  const bars = Array.from({ length: 28 }, (_, i) =>
-    Math.round(18 + Math.abs(Math.sin((i + 1) * (h % 7 + 2) * 0.37)) * 62),
-  );
-
-  return (
-    <div
-      className="relative flex aspect-[4/3] items-end justify-center gap-[3px] overflow-hidden px-4 pb-4"
-      style={{
-        background: `linear-gradient(135deg, hsl(${hue} 50% 24%), hsl(${(hue + 60) % 360} 55% 10%))`,
-      }}
-      aria-hidden="true"
-    >
-      <span className="absolute top-3 right-4 text-5xl font-black text-white/[0.06] select-none">
-        {work.circle.name.charAt(0)}
-      </span>
-      {bars.map((height, i) => (
-        <span
-          key={i}
-          className="w-[3px] rounded-full bg-white/25"
-          style={{ height: `${height}%` }}
-        />
-      ))}
-    </div>
-  );
-}
+import {
+  circleHref,
+  formatYen,
+  isAtLowestPrice,
+  isDroppedToday,
+  isOnSale,
+} from "@/lib/works";
 
 function dropLabel(days: number | null): string | null {
   if (days === null) return null;
   return days === 0 ? "本日値下げ" : `${days}日前に値下げ`;
 }
 
+/**
+ * 一覧用カード。
+ *  - ジャケット画像・タイトル → 作品詳細ページ(/work/[id])
+ *  - 「FANZAで見る」 → アフィリエイト URL へ直接
+ * 一覧には大量に並ぶので、リンクは prefetch しない。
+ */
 export function WorkCard({ work }: { work: Work }) {
   const onSale = isOnSale(work);
   const label = dropLabel(work.priceDroppedDaysAgo);
+  const detailHref = `/work/${work.id}`;
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-xl border border-line bg-surface transition hover:border-accent/40 hover:shadow-[0_0_32px_-12px_var(--color-accent)]">
       <div className="relative">
-        <Cover work={work} />
-        <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+        <Link
+          href={detailHref}
+          prefetch={false}
+          className="block"
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <WorkCover
+            work={work}
+            sizes="(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 100vw"
+          />
+        </Link>
+        <div className="pointer-events-none absolute top-2 left-2 flex flex-wrap gap-1.5">
           {onSale && (
             <span
               className={`rounded-md px-2 py-0.5 text-xs font-bold ${
@@ -95,7 +61,7 @@ export function WorkCard({ work }: { work: Work }) {
           )}
         </div>
         {work.sampleAudioAvailable === true && (
-          <span className="absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium text-foreground backdrop-blur">
+          <span className="pointer-events-none absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium text-foreground backdrop-blur">
             <svg viewBox="0 0 24 24" className="size-3" fill="currentColor" aria-hidden="true">
               <path d="M8 5v14l11-7z" />
             </svg>
@@ -103,7 +69,7 @@ export function WorkCard({ work }: { work: Work }) {
           </span>
         )}
         {label && (
-          <span className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 text-[11px] text-foreground/80 backdrop-blur">
+          <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 text-[11px] text-foreground/80 backdrop-blur">
             {label}
           </span>
         )}
@@ -111,7 +77,13 @@ export function WorkCard({ work }: { work: Work }) {
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <h3 className="line-clamp-2 min-h-[2.6em] text-sm leading-snug font-bold">
-          {work.title}
+          <Link
+            href={detailHref}
+            prefetch={false}
+            className="hover:text-accent hover:underline"
+          >
+            {work.title}
+          </Link>
         </h3>
 
         <dl className="space-y-1.5 text-sm">
@@ -119,7 +91,8 @@ export function WorkCard({ work }: { work: Work }) {
             <dt className="w-14 shrink-0 text-xs text-muted">サークル</dt>
             <dd className="min-w-0 flex-1 truncate">
               <Link
-                href={`/circle/${work.circle.slug}`}
+                href={circleHref(work.circle.slug)}
+                prefetch={false}
                 className="hover:text-accent hover:underline"
               >
                 {work.circle.name}
@@ -137,6 +110,7 @@ export function WorkCard({ work }: { work: Work }) {
               <dd className="min-w-0 flex-1 truncate">
                 <Link
                   href={`/cv/${work.cv.slug}`}
+                  prefetch={false}
                   className="hover:text-accent hover:underline"
                 >
                   {work.cv.name}
@@ -156,6 +130,7 @@ export function WorkCard({ work }: { work: Work }) {
             <li key={t}>
               <Link
                 href={`/tag/${t}`}
+                prefetch={false}
                 className="block rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent hover:bg-accent/25"
               >
                 {tagLabel(t)}
@@ -166,6 +141,7 @@ export function WorkCard({ work }: { work: Work }) {
             <li key={t}>
               <Link
                 href={`/tag/${t}`}
+                prefetch={false}
                 className="block rounded-full border border-line px-2 py-0.5 text-[11px] text-muted hover:border-accent/50 hover:text-accent"
               >
                 {tagLabel(t)}

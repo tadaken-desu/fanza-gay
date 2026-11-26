@@ -26,7 +26,8 @@
  *     /digital/voice/ を含むので、それで絞り込む(isVoiceWork)。
  *   - prices.price / list_price = 現在価格 / 通常価格。サークルは iteminfo.maker。
  *   - CV 専用フィールドはない。一部の作品のタイトルに【出演声優:○○】と入っているので、
- *     それを抽出する(extractCv)。なければ cv = null。
+ *     それを抽出する(extractCv)。取れなかった作品は src/data/cv-map.json(手動の対応表)で
+ *     補完する(作品の content_id 指定 / サークル slug 指定)。それでもなければ cv = null。
  *   - 試聴の有無を示すフィールドはない。sampleAudioAvailable は不明(null)として扱う。
  *   - campaign[].date_begin があれば、セール開始日として値下げ日に使う。
  *   - 画像は imageURL.large(560x420)を使う。list は 90x90 で小さすぎる。
@@ -40,6 +41,9 @@ import type { Work } from "../src/lib/types.ts";
 
 const WORKS_PATH = fileURLToPath(
   new URL("../src/data/works.json", import.meta.url),
+);
+const CV_MAP_PATH = fileURLToPath(
+  new URL("../src/data/cv-map.json", import.meta.url),
 );
 
 const API_BASE = "https://api.dmm.com/affiliate/v3";
@@ -220,7 +224,48 @@ export function extractCv(title: string) {
     ?.split(/[、,，/／&＆]|(?<=様|さん)・/)[0]
     ?.replace(/(様|さん)$/, "")
     .trim();
-  return name ? { slug: `cv-${hash8(name)}`, name } : null;
+  return cvByName(name);
+}
+
+/** CV 名から Person を作る。同じ名前なら常に同じ slug(タイトル由来・手動補完で同じ /cv ページにまとまる) */
+function cvByName(name: string | undefined | null) {
+  const n = name?.trim();
+  return n ? { slug: `cv-${hash8(n)}`, name: n } : null;
+}
+
+/* ------------------------------------------------------------------ *
+ * CV の手動補完(src/data/cv-map.json)
+ * ------------------------------------------------------------------ */
+
+export type CvMap = {
+  /** content_id → CV 名 */
+  works?: Record<string, string>;
+  /** サークル slug → CV 名(専属 CV のサークルなど) */
+  circles?: Record<string, string>;
+};
+
+/** タイトルから取れなかった CV を、手動の対応表から補う(作品指定 > サークル指定) */
+export function lookupCv(map: CvMap, workId: string, circleSlug: string) {
+  return cvByName(map.works?.[workId] ?? map.circles?.[circleSlug]);
+}
+
+function stringRecord(v: unknown): Record<string, string> {
+  if (typeof v !== "object" || v === null) return {};
+  return Object.fromEntries(
+    Object.entries(v).filter(
+      (e): e is [string, string] => typeof e[1] === "string" && e[1].trim() !== "",
+    ),
+  );
+}
+
+function loadCvMap(): CvMap {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(CV_MAP_PATH, "utf8"));
+    const obj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+    return { works: stringRecord(obj.works), circles: stringRecord(obj.circles) };
+  } catch {
+    return {};
+  }
 }
 
 /** campaign[].date_begin(ISO 8601, UTC)を JST の日付にする。なければ null */
@@ -236,6 +281,7 @@ export function normalizeItem(
   item: ApiItem,
   prev: Work | undefined,
   today: string,
+  cvMap: CvMap = {},
 ): Work | null {
   const id = item.content_id;
   const title = item.title?.trim();
@@ -261,14 +307,17 @@ export function normalizeItem(
     id,
     title,
     circle,
+    // 優先順位: API のフィールド > タイトル抽出 > cv-map.json
     cv:
       personOf(item.iteminfo?.actor?.[0] ?? item.iteminfo?.actress?.[0], "cv") ??
-      extractCv(title),
+      extractCv(title) ??
+      lookupCv(cvMap, id, circle.slug),
     ...resolvePrice(price, regularPrice, prev, today, campaignStartJst(item)),
     affiliateUrl,
     thumbnailUrl: thumbnailOf(item),
     // API に試聴の有無を示すフィールドがないため「不明」とする
     sampleAudioAvailable: null,
+    genres: [...new Set(genres)],
     relationTags: tags.filter((t) => relation.has(t)) as Work["relationTags"],
     situationTags: tags.filter((t) => !relation.has(t)) as Work["situationTags"],
   };
@@ -415,12 +464,13 @@ async function main() {
 
   const items = await fetchItems();
   const previous = loadPrevious();
+  const cvMap = loadCvMap();
   const today = todayJst();
 
   const works: Work[] = [];
   let skipped = 0;
   for (const item of items) {
-    const w = normalizeItem(item, previous.get(item.content_id ?? ""), today);
+    const w = normalizeItem(item, previous.get(item.content_id ?? ""), today, cvMap);
     if (w) works.push(w);
     else skipped++;
   }

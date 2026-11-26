@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { WorkListing } from "@/components/WorkListing";
 import { ALL_TAGS, findTag } from "@/lib/tags";
 import {
+  circleHref,
   formatYen,
   getCircles,
   getCvs,
@@ -74,7 +75,7 @@ export default async function TagPage({ params }: Props) {
         {
           title: "このタグの作品があるサークル",
           links: getCircles(works).map((c) => ({
-            href: `/circle/${c.slug}`,
+            href: circleHref(c.slug),
             label: c.name,
             count: c.count,
           })),

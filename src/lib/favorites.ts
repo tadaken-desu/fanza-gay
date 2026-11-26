@@ -4,16 +4,10 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 /**
  * お気に入り CV(声優)・サークル(localStorage)。
- * 保存形式は "cv:<slug>" / "circle:<slug>" の文字列配列。
+ * 保存形式は "cv:<slug>" / "circle:<slug>" の文字列配列(キーは favorite-keys.ts)。
  * ログイン機能ができるまでの暫定実装で、保存先を API に差し替えるときは
  * このファイルだけ直せばよい。
  */
-
-export type FavoriteKind = "cv" | "circle";
-
-export function favoriteKey(kind: FavoriteKind, slug: string): string {
-  return `${kind}:${slug}`;
-}
 
 // 保存形式を変えたときに古いデータを読まないよう、キー名にバージョンを入れる。
 const STORAGE_KEY = "bl-asmr-db:favorites:v1";

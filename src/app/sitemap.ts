@@ -1,8 +1,14 @@
 import type { MetadataRoute } from "next";
 import { ALL_TAGS } from "@/lib/tags";
 import { SITE_URL } from "@/lib/site";
-import { getCircles, getCvs, getWorksByTag } from "@/lib/works";
+import {
+  getAllWorks,
+  getCirclesWithPage,
+  getCvs,
+  getWorksByTag,
+} from "@/lib/works";
 
+/** generateStaticParams と同じ条件のページだけを載せる(404/リダイレクトのURLを出さない) */
 export default function sitemap(): MetadataRoute.Sitemap {
   const url = (path: string) => `${SITE_URL}${path}`;
 
@@ -13,7 +19,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "daily" as const,
       priority: 0.7,
     })),
-    ...getCircles().map((c) => ({
+    ...getCirclesWithPage().map((c) => ({
       url: url(`/circle/${c.slug}`),
       changeFrequency: "daily" as const,
       priority: 0.7,
@@ -22,6 +28,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: url(`/tag/${t.slug}`),
       changeFrequency: "daily" as const,
       priority: 0.8,
+    })),
+    ...getAllWorks().map((w) => ({
+      url: url(`/work/${w.id}`),
+      changeFrequency: "daily" as const,
+      priority: 0.6,
     })),
   ];
 }

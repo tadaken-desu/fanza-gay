@@ -41,6 +41,9 @@ export type Work = {
    */
   sampleAudioAvailable: boolean | null;
 
+  /** FANZA のジャンル名(「ゲイ」「BL（ボーイズラブ）」など)。「ゲイ向け」判定に使う */
+  genres: string[];
+
   relationTags: RelationTagSlug[];
   situationTags: SituationTagSlug[];
 };

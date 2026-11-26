@@ -1,21 +1,25 @@
 "use client";
 
-import { WorkCard } from "@/components/WorkCard";
-import { favoriteKey, useFavorites } from "@/lib/favorites";
-import type { Work } from "@/lib/types";
+import type { ReactNode } from "react";
+import { useFavorites } from "@/lib/favorites";
+
+export type DealItem = {
+  id: string;
+  /** この作品に紐づくお気に入りキー(CV・サークル。favorite-keys.ts の形式) */
+  keys: string[];
+  /** サーバーで描画済みのカード */
+  card: ReactNode;
+};
 
 /**
  * お気に入り CV・サークルの「今日値下げされた作品」。
- * お気に入りはブラウザ側(localStorage)にあるため、サーバーからは
- * 「今日値下げされた全作品」を受け取り、ここで絞り込む。
+ * お気に入りはブラウザ側(localStorage)にあるため、サーバーから
+ * 「今日値下げされた全作品のカード」を受け取り、ここで出し分ける。
+ * (カードをサーバーで描画することで、作品データ全体をクライアントに送らない)
  */
-export function FavoriteDeals({ droppedToday }: { droppedToday: Work[] }) {
+export function FavoriteDeals({ items }: { items: DealItem[] }) {
   const { favorites } = useFavorites();
-  const deals = droppedToday.filter(
-    (w) =>
-      (w.cv && favorites.includes(favoriteKey("cv", w.cv.slug))) ||
-      favorites.includes(favoriteKey("circle", w.circle.slug)),
-  );
+  const deals = items.filter((it) => it.keys.some((k) => favorites.includes(k)));
 
   return (
     <section aria-labelledby="fav-deals-heading" className="mb-10">
@@ -35,8 +39,10 @@ export function FavoriteDeals({ droppedToday }: { droppedToday: Work[] }) {
 
       {deals.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {deals.map((w) => (
-            <WorkCard key={w.id} work={w} />
+          {deals.map((d) => (
+            <div key={d.id} className="contents">
+              {d.card}
+            </div>
           ))}
         </div>
       ) : (

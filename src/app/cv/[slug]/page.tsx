@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { WorkListing } from "@/components/WorkListing";
 import {
+  circleHref,
   formatYen,
   getCircles,
   getCvs,
@@ -50,7 +51,7 @@ export default async function CvPage({ params }: Props) {
         {
           title: "出演作のサークル",
           links: getCircles(works).map((c) => ({
-            href: `/circle/${c.slug}`,
+            href: circleHref(c.slug),
             label: c.name,
             count: c.count,
           })),

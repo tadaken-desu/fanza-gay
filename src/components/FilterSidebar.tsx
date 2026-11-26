@@ -5,12 +5,12 @@ import { useState, useTransition } from "react";
 import {
   EMPTY_FILTERS,
   PRICE_LIMITS,
-  filtersToQuery,
+  filtersHref,
   hasActiveFilters,
   type Filters,
 } from "@/lib/filters";
 import { RELATION_TAGS, SITUATION_TAGS } from "@/lib/tags";
-import { formatYen } from "@/lib/works";
+import { formatYen } from "@/lib/price";
 
 type Props = {
   filters: Filters;
@@ -109,9 +109,9 @@ export function FilterSidebar({
   const active = hasActiveFilters(filters);
 
   function apply(next: Filters) {
-    const q = filtersToQuery(next);
+    // 条件を変えたら1ページ目に戻す
     startTransition(() => {
-      router.push(q ? `/?${q}` : "/", { scroll: false });
+      router.push(filtersHref({ ...next, page: 1 }), { scroll: false });
     });
   }
 
@@ -136,7 +136,7 @@ export function FilterSidebar({
           <h2 className="font-black">絞り込み検索</h2>
           <button
             type="button"
-            onClick={() => apply(EMPTY_FILTERS)}
+            onClick={() => apply({ ...EMPTY_FILTERS, sort: filters.sort })}
             disabled={!active}
             className="text-xs text-muted underline-offset-2 hover:text-accent hover:underline disabled:pointer-events-none disabled:opacity-30"
           >

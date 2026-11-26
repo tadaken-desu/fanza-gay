@@ -1,0 +1,5 @@
+{
+  "_readme": "CV情報を手動で補完するための対応表。scripts/fetch-fanza.ts が、タイトルから CV を取れなかった作品に対して使う。優先順位: タイトル抽出 > works > circles。works のキーは FANZA の content_id(例: d_858402)、circles のキーはサークルの slug(例: circle-217668。サイトのURL /circle/circle-217668 や /?circle=circle-217668 で確認できる)、値は CV 名(複数名の場合は主役の1名)。同じ名前なら、タイトル由来の CV と同じ /cv/[slug] ページにまとまる。",
+  "works": {},
+  "circles": {}
+}

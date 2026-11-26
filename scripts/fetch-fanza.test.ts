@@ -6,6 +6,7 @@ import {
   classifyTags,
   extractCv,
   isVoiceWork,
+  lookupCv,
   normalizeItem,
   resolvePrice,
   todayJst,
@@ -72,6 +73,40 @@ test("extractCv: タイトルの【出演声優:○○】から先頭1名を取�
   assert.equal(extractCv("CV:立知鼎】")?.slug, extractCv("【出演声優:立知鼎】")?.slug);
 });
 
+test("lookupCv / normalizeItem: タイトルで取れない CV を cv-map.json で補完する", () => {
+  const noCv: ApiItem = { ...voiceItem, title: "CV表記のない作品" };
+
+  // 対応表なし → null
+  assert.equal(normalizeItem(noCv, undefined, today)?.cv, null);
+
+  // 作品指定
+  const byWork = normalizeItem(noCv, undefined, today, {
+    works: { d_858402: "立知鼎" },
+  });
+  assert.equal(byWork?.cv?.name, "立知鼎");
+
+  // サークル指定(専属 CV)。作品指定があればそちらが優先
+  const circleMap = { circles: { "circle-217668": "霞一恵" } };
+  assert.equal(normalizeItem(noCv, undefined, today, circleMap)?.cv?.name, "霞一恵");
+  assert.equal(
+    normalizeItem(noCv, undefined, today, {
+      ...circleMap,
+      works: { d_858402: "立知鼎" },
+    })?.cv?.name,
+    "立知鼎",
+  );
+
+  // タイトルから取れた CV は対応表より優先(補完であって上書きではない)
+  assert.equal(
+    normalizeItem(voiceItem, undefined, today, { works: { d_858402: "別人" } })?.cv?.name,
+    "立知鼎",
+  );
+
+  // タイトル由来と手動補完で同じ名前なら同じ slug(同じ /cv ページにまとまる)
+  assert.equal(byWork?.cv?.slug, extractCv("【出演声優:立知鼎】")?.slug);
+  assert.equal(lookupCv({}, "d_1", "circle-1"), null);
+});
+
 test("campaignStartJst: UTC の開始時刻を JST の日付にする", () => {
   assert.equal(campaignStartJst(voiceItem), "2026-11-26");
   assert.equal(campaignStartJst({}), null);
@@ -91,6 +126,7 @@ test("normalizeItem: 実レスポンス形式の作品を変換する", () => {
     "https://doujin-assets.dmm.co.jp/digital/voice/d_858402/d_858402pl.jpg",
   );
   assert.equal(w.sampleAudioAvailable, null);
+  assert.deepEqual(w.genres, ["ゲイ", "ガチムチ", "同級生/同僚"]);
   assert.deepEqual(w.relationTags, ["senpai-kouhai", "gachimuchi"]);
   assert.deepEqual(w.situationTags, ["sasayaki", "soine"]);
 });

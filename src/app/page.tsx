@@ -1,24 +1,47 @@
+import Link from "next/link";
 import { Suspense } from "react";
-import { FavoriteDeals } from "@/components/FavoriteDeals";
+import { FavoriteDeals, type DealItem } from "@/components/FavoriteDeals";
 import { FilterSidebar } from "@/components/FilterSidebar";
 import { LinkGroups } from "@/components/LinkGroups";
+import { Pagination } from "@/components/Pagination";
+import { QuickTabs } from "@/components/QuickTabs";
+import { SortSelect } from "@/components/SortSelect";
 import { WorkCard } from "@/components/WorkCard";
-import { hasActiveFilters, parseFilters } from "@/lib/filters";
+import { favoriteKey } from "@/lib/favorite-keys";
+import {
+  PAGE_SIZE,
+  QUICK_TABS,
+  filtersHref,
+  hasActiveFilters,
+  parseFilters,
+} from "@/lib/filters";
 import { RELATION_TAGS, SITUATION_TAGS, tagLabel } from "@/lib/tags";
 import {
   countTags,
   filterWorks,
-  getAllWorks,
-  getCircles,
-  getCvs,
   formatYen,
+  getAllWorks,
+  getCircleBySlug,
+  getCirclesWithPage,
+  getCvs,
   isDroppedToday,
+  sortWorks,
 } from "@/lib/works";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default function Home({ searchParams }: { searchParams: SearchParams }) {
-  const all = getAllWorks();
+  // 本日値下げ作品のカードはサーバーで描画し、お気に入りの出し分けだけクライアントで行う
+  const deals: DealItem[] = getAllWorks()
+    .filter(isDroppedToday)
+    .map((w) => ({
+      id: w.id,
+      keys: [
+        favoriteKey("circle", w.circle.slug),
+        ...(w.cv ? [favoriteKey("cv", w.cv.slug)] : []),
+      ],
+      card: <WorkCard work={w} />,
+    }));
 
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
@@ -32,7 +55,7 @@ export default function Home({ searchParams }: { searchParams: SearchParams }) {
         </p>
       </header>
 
-      <FavoriteDeals droppedToday={all.filter(isDroppedToday)} />
+      <FavoriteDeals items={deals} />
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         {/* searchParams はリクエスト時データなので、読む部分を Suspense で囲む */}
@@ -67,11 +90,23 @@ async function Sidebar({ searchParams }: { searchParams: SearchParams }) {
 
 async function Results({ searchParams }: { searchParams: SearchParams }) {
   const filters = parseFilters(await searchParams);
-  const results = filterWorks(getAllWorks(), filters);
+  const results = sortWorks(filterWorks(getAllWorks(), filters), filters.sort);
+
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const page = Math.min(filters.page, totalPages);
+  const start = (page - 1) * PAGE_SIZE;
+  const pageItems = results.slice(start, start + PAGE_SIZE);
+
+  const circle = filters.circle
+    ? (getCircleBySlug(filters.circle)?.name ?? filters.circle)
+    : null;
   const tags = [...filters.rel, ...filters.sit].map(tagLabel);
-  const joiner = filters.mode === "any" ? " / " : " × ";
   const heading = [
-    tags.length > 0 ? tags.join(joiner) : null,
+    circle,
+    tags.length > 0 ? tags.join(filters.mode === "any" ? " / " : " × ") : null,
+    filters.quick !== "all"
+      ? QUICK_TABS.find((t) => t.key === filters.quick)?.plain
+      : null,
     filters.maxPrice !== null ? `${formatYen(filters.maxPrice)}以下` : null,
     filters.saleOnly ? "セール中" : null,
     filters.sampleOnly ? "試聴あり" : null,
@@ -89,13 +124,35 @@ async function Results({ searchParams }: { searchParams: SearchParams }) {
           {hasActiveFilters(filters) ? `${heading} の作品` : "すべての作品"}
           <span className="ml-3 text-sm font-normal text-muted">
             {results.length}件
+            {totalPages > 1 &&
+              `(${start + 1}〜${start + pageItems.length}件目を表示)`}
           </span>
         </h2>
       </div>
 
-      {results.length > 0 ? (
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <QuickTabs filters={filters} />
+        <SortSelect filters={filters} />
+      </div>
+
+      {filters.circle && (
+        <p className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">サークルで絞り込み中:</span>
+          <Link
+            href={filtersHref({ ...filters, circle: null, page: 1 })}
+            prefetch={false}
+            className="inline-flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent/10 px-3 py-1 text-accent hover:bg-accent/20"
+          >
+            {circle}
+            <span aria-hidden="true">×</span>
+            <span className="sr-only">絞り込みを解除</span>
+          </Link>
+        </p>
+      )}
+
+      {pageItems.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {results.map((w) => (
+          {pageItems.map((w) => (
             <WorkCard key={w.id} work={w} />
           ))}
         </div>
@@ -104,6 +161,8 @@ async function Results({ searchParams }: { searchParams: SearchParams }) {
           条件に一致する作品がありません。条件を緩めてみてください。
         </div>
       )}
+
+      <Pagination filters={{ ...filters, page }} totalPages={totalPages} />
     </section>
   );
 }
@@ -126,8 +185,8 @@ function Directory() {
             })),
           },
           {
-            title: "サークル",
-            links: getCircles().map((c) => ({
+            title: "サークル(2作品以上)",
+            links: getCirclesWithPage().map((c) => ({
               href: `/circle/${c.slug}`,
               label: c.name,
               count: c.count,
