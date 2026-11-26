@@ -11,6 +11,7 @@ import {
   getAllWorks,
   getCircles,
   getCvs,
+  formatYen,
   isDroppedToday,
 } from "@/lib/works";
 
@@ -59,6 +60,7 @@ async function Sidebar({ searchParams }: { searchParams: SearchParams }) {
       relCounts={countTags(all, "relationTags")}
       sitCounts={countTags(all, "situationTags")}
       resultCount={filterWorks(all, filters).length}
+      showSampleFilter={all.some((w) => w.sampleAudioAvailable === true)}
     />
   );
 }
@@ -66,8 +68,16 @@ async function Sidebar({ searchParams }: { searchParams: SearchParams }) {
 async function Results({ searchParams }: { searchParams: SearchParams }) {
   const filters = parseFilters(await searchParams);
   const results = filterWorks(getAllWorks(), filters);
-  const selected = [...filters.rel, ...filters.sit].map(tagLabel);
+  const tags = [...filters.rel, ...filters.sit].map(tagLabel);
   const joiner = filters.mode === "any" ? " / " : " × ";
+  const heading = [
+    tags.length > 0 ? tags.join(joiner) : null,
+    filters.maxPrice !== null ? `${formatYen(filters.maxPrice)}以下` : null,
+    filters.saleOnly ? "セール中" : null,
+    filters.sampleOnly ? "試聴あり" : null,
+  ]
+    .filter(Boolean)
+    .join(" ・ ");
 
   return (
     <section aria-labelledby="results-heading" className="min-w-0">
@@ -76,9 +86,7 @@ async function Results({ searchParams }: { searchParams: SearchParams }) {
           Browse
         </p>
         <h2 id="results-heading" className="text-xl font-black">
-          {hasActiveFilters(filters)
-            ? `${selected.join(joiner) || "条件指定"} の作品`
-            : "すべての作品"}
+          {hasActiveFilters(filters) ? `${heading} の作品` : "すべての作品"}
           <span className="ml-3 text-sm font-normal text-muted">
             {results.length}件
           </span>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_JP } from "next/font/google";
 import { Header } from "@/components/Header";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { getAllWorks } from "@/lib/works";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,7 +44,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <p>
             当サイトはFANZAのアフィリエイトプログラムによる広告を利用しています。
           </p>
-          <p>現在掲載中の作品情報・価格はすべてダミーデータです。</p>
+          {getAllWorks().some((w) => w.id.startsWith("d_dummy")) && (
+            <p>現在掲載中の作品情報・価格はダミーデータです。</p>
+          )}
         </footer>
       </body>
     </html>

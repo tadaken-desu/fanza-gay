@@ -7,6 +7,7 @@
  *   node scripts/fetch-fanza.ts --floors     # FloorList API で同人フロアのコードを確認
  *
  * Node.js 22.18+ / 24 の TypeScript 型除去(type stripping)で直接実行する。
+ * ローカルでは `node --env-file=.env.local scripts/fetch-fanza.ts` で環境変数を読み込める。
  *
  * 必須の環境変数:
  *   FANZA_API_ID        DMM アフィリエイトの API ID
@@ -15,16 +16,20 @@
  * 任意の環境変数(括弧内は既定値):
  *   FANZA_SITE      (FANZA)
  *   FANZA_SERVICE   (doujin)
- *   FANZA_FLOOR     (digital_doujin)  ※要確認。--floors で正しいコードを調べられる
- *   FANZA_KEYWORDS  ("BL ボイス,ゲイ ボイス") カンマ区切り。各キーワードで検索して結果を統合する
+ *   FANZA_FLOOR     (digital_doujin_bl)  らぶカル(BL)。--floors で他のフロアも確認できる
+ *   FANZA_KEYWORDS  ("ボイス,音声,ASMR,バイノーラル") カンマ区切り。各キーワードで検索して結果を統合する
  *   FANZA_PAGES     (3)    キーワードごとに取得するページ数
  *   FANZA_HITS      (100)  1ページあたりの件数(最大100)
  *
- * 未検証の前提(実 API のレスポンスで要確認):
- *   - prices.price / prices.list_price が現在価格 / 通常価格として返る
- *   - iteminfo.maker がサークル、iteminfo.actor(または actress)が CV に対応する
- *   - 試聴ボイスの有無を示すフィールドがないため、ジャンル名に「試聴」を含むかで暫定判定
- *   → レスポンスに合わせて normalizeItem() を調整すること。
+ * 実 API のレスポンス(2026-11 時点で確認)に基づく前提:
+ *   - BL フロアにはコミック・CG集・音声が混在する。音声作品は imageURL が
+ *     /digital/voice/ を含むので、それで絞り込む(isVoiceWork)。
+ *   - prices.price / list_price = 現在価格 / 通常価格。サークルは iteminfo.maker。
+ *   - CV 専用フィールドはない。一部の作品のタイトルに【出演声優:○○】と入っているので、
+ *     それを抽出する(extractCv)。なければ cv = null。
+ *   - 試聴の有無を示すフィールドはない。sampleAudioAvailable は不明(null)として扱う。
+ *   - campaign[].date_begin があれば、セール開始日として値下げ日に使う。
+ *   - 画像は imageURL.large(560x420)を使う。list は 90x90 で小さすぎる。
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -52,6 +57,8 @@ export type ApiItem = {
   URL?: string;
   affiliateURL?: string;
   prices?: { price?: string | number; list_price?: string | number };
+  imageURL?: { list?: string; large?: string };
+  campaign?: { date_begin?: string; date_end?: string; title?: string }[];
   iteminfo?: {
     maker?: NamedRef[];
     actor?: NamedRef[];
@@ -80,7 +87,8 @@ export const TAG_KEYWORDS: Record<TagSlug, readonly string[]> = {
   "toshishita-zeme": ["年下攻め", "年下ワンコ", "ワンコ", "年下"],
   "senpai-kouhai": ["先輩", "後輩"],
   gachimuchi: ["ガチムチ", "体育会", "筋肉"],
-  riman: ["リーマン", "サラリーマン", "上司", "社長", "同僚"],
+  // 「同級生/同僚」は学生ジャンルにも付くため「同僚」単体はキーワードにしない
+  riman: ["リーマン", "サラリーマン", "上司", "社長"],
   yandere: ["ヤンデレ", "執着", "監禁", "独占欲"],
   "mesu-ochi": ["メス堕ち", "メスオチ", "雌堕ち"],
   binaural: ["バイノーラル", "ダミヘ", "ダミーヘッド"],
@@ -131,8 +139,8 @@ type PriceFields = Pick<
 /**
  * 前回データ(prev)と今回価格から、割引率・過去最安値・値下げ日を決める。
  *  - 現在価格が前回より下がった → 今日値下げ
- *  - セール中で前回データがない(初観測) → 今日値下げ扱い
- *  - セール中で価格が変わらない → 値下げ日を維持
+ *  - それ以外のセール中 → 「前回までの値下げ日」と「キャンペーン開始日(campaignStart)」の新しい方。
+ *    どちらも不明なら null(いつから安いか分からない作品を「今日値下げ」と偽らない)
  *  - セール終了(現在価格 = 通常価格) → 値下げ日をクリア
  */
 export function resolvePrice(
@@ -140,12 +148,22 @@ export function resolvePrice(
   regularPrice: number,
   prev: Work | undefined,
   today: string,
+  campaignStart: string | null = null,
 ): PriceFields {
   const onSale = price < regularPrice;
-  const dropped = !prev || price < prev.price;
 
   let priceDroppedOn: string | null = null;
-  if (onSale) priceDroppedOn = dropped ? today : (prev?.priceDroppedOn ?? today);
+  if (onSale) {
+    if (prev && price < prev.price) {
+      priceDroppedOn = today;
+    } else {
+      // 未来日(開始前のキャンペーン)は無視する
+      const known = [prev?.priceDroppedOn ?? null, campaignStart].filter(
+        (d): d is string => d !== null && d <= today,
+      );
+      priceDroppedOn = known.length > 0 ? known.reduce((a, b) => (a > b ? a : b)) : null;
+    }
+  }
 
   return {
     price,
@@ -172,11 +190,46 @@ function toInt(v: string | number | undefined): number | null {
 const hash8 = (s: string) =>
   createHash("sha1").update(s).digest("hex").slice(0, 8);
 
+/** 一覧用の大きい画像(560x420)。list は 90x90 で小さすぎる。https 以外は使わない */
+function thumbnailOf(item: ApiItem): string | null {
+  const url = item.imageURL?.large ?? item.imageURL?.list;
+  return url?.startsWith("https://") ? url : null;
+}
+
 /** 名前しか手がかりのない CV などは、名前のハッシュから安定した slug を作る */
 function personOf(ref: NamedRef | undefined, prefix: string) {
   const name = ref?.name?.trim();
   if (!name) return null;
   return { slug: `${prefix}-${ref?.id ?? hash8(name)}`, name };
+}
+
+/** BL フロアにはコミック・CG集も混在するため、音声作品(画像パスが /digital/voice/)だけ通す */
+export function isVoiceWork(item: ApiItem): boolean {
+  const img = item.imageURL?.large ?? item.imageURL?.list ?? "";
+  return img.includes("/digital/voice/");
+}
+
+/**
+ * タイトル中の【出演声優:○○、△△】などから CV を取り出す(複数いる場合は先頭の1名)。
+ * API に CV 専用フィールドがないための暫定対応。見つからなければ null。
+ */
+export function extractCv(title: string) {
+  // 実データの表記ゆれ: 【出演声優:A、B】【出演:A】【CV:A様・B様】【CV.A】
+  const m = /(?:出演声優|出演|声優|CV|ＣＶ)\s*[:：.．]\s*([^】\]」』）)]+)/i.exec(title);
+  const name = m?.[1]
+    ?.split(/[、,，/／&＆]|(?<=様|さん)・/)[0]
+    ?.replace(/(様|さん)$/, "")
+    .trim();
+  return name ? { slug: `cv-${hash8(name)}`, name } : null;
+}
+
+/** campaign[].date_begin(ISO 8601, UTC)を JST の日付にする。なければ null */
+export function campaignStartJst(item: ApiItem): string | null {
+  for (const c of item.campaign ?? []) {
+    const t = Date.parse(c.date_begin ?? "");
+    if (!Number.isNaN(t)) return todayJst(t);
+  }
+  return null;
 }
 
 export function normalizeItem(
@@ -190,6 +243,7 @@ export function normalizeItem(
   const circle = personOf(item.iteminfo?.maker?.[0], "circle");
   const affiliateUrl = item.affiliateURL ?? item.URL;
   if (!id || !title || price === null || !circle || !affiliateUrl) return null;
+  if (!isVoiceWork(item)) return null;
 
   const listPrice = toInt(item.prices?.list_price);
   const regularPrice = listPrice !== null && listPrice > price ? listPrice : price;
@@ -207,11 +261,14 @@ export function normalizeItem(
     id,
     title,
     circle,
-    cv: personOf(item.iteminfo?.actor?.[0] ?? item.iteminfo?.actress?.[0], "cv"),
-    ...resolvePrice(price, regularPrice, prev, today),
+    cv:
+      personOf(item.iteminfo?.actor?.[0] ?? item.iteminfo?.actress?.[0], "cv") ??
+      extractCv(title),
+    ...resolvePrice(price, regularPrice, prev, today, campaignStartJst(item)),
     affiliateUrl,
-    // TODO: 試聴ボイスの有無を取れるフィールドが見つかったら置き換える
-    sampleAudioAvailable: genres.some((g) => g.includes("試聴")),
+    thumbnailUrl: thumbnailOf(item),
+    // API に試聴の有無を示すフィールドがないため「不明」とする
+    sampleAudioAvailable: null,
     relationTags: tags.filter((t) => relation.has(t)) as Work["relationTags"],
     situationTags: tags.filter((t) => !relation.has(t)) as Work["situationTags"],
   };
@@ -289,8 +346,8 @@ async function listFloors() {
 async function fetchItems(): Promise<ApiItem[]> {
   const site = envOr("FANZA_SITE", "FANZA");
   const service = envOr("FANZA_SERVICE", "doujin");
-  const floor = envOr("FANZA_FLOOR", "digital_doujin");
-  const keywords = envOr("FANZA_KEYWORDS", "BL ボイス,ゲイ ボイス")
+  const floor = envOr("FANZA_FLOOR", "digital_doujin_bl");
+  const keywords = envOr("FANZA_KEYWORDS", "ボイス,音声,ASMR,バイノーラル")
     .split(",")
     .map((k) => k.trim())
     .filter(Boolean);
@@ -378,7 +435,10 @@ async function main() {
   works.sort((a, b) => a.id.localeCompare(b.id));
   const droppedToday = works.filter((w) => w.priceDroppedDaysAgo === 0).length;
   console.log(
-    `作品 ${works.length}件 (変換失敗 ${skipped}件 / 本日値下げ ${droppedToday}件)`,
+    `作品 ${works.length}件 (音声以外・必須項目欠落で除外 ${skipped}件 / 本日値下げ ${droppedToday}件)`,
+  );
+  console.log(
+    `  CV判明 ${works.filter((w) => w.cv).length}件 / サムネイルあり ${works.filter((w) => w.thumbnailUrl).length}件 / セール中 ${works.filter((w) => w.discountRate > 0).length}件`,
   );
 
   if (args.has("--dry-run")) {

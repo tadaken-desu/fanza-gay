@@ -17,6 +17,8 @@ type Props = {
   relCounts: Record<string, number>;
   sitCounts: Record<string, number>;
   resultCount: number;
+  /** 試聴の有無が分かる作品が1件もないとき(API 未対応)は、試聴フィルタを出さない */
+  showSampleFilter: boolean;
 };
 
 function toggleIn(list: string[], slug: string) {
@@ -99,6 +101,7 @@ export function FilterSidebar({
   relCounts,
   sitCounts,
   resultCount,
+  showSampleFilter,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -211,12 +214,14 @@ export function FilterSidebar({
           >
             セール中の作品のみ
           </Check>
-          <Check
-            checked={filters.sampleOnly}
-            onChange={(v) => apply({ ...filters, sampleOnly: v })}
-          >
-            試聴ボイスありのみ
-          </Check>
+          {(showSampleFilter || filters.sampleOnly) && (
+            <Check
+              checked={filters.sampleOnly}
+              onChange={(v) => apply({ ...filters, sampleOnly: v })}
+            >
+              試聴ボイスありのみ
+            </Check>
+          )}
         </div>
 
         <p

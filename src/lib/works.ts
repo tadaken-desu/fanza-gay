@@ -53,7 +53,7 @@ export function filterWorks(all: Work[], f: Filters): Work[] {
       matches(f.sit, w.situationTags, f.mode) &&
       (f.maxPrice === null || w.price <= f.maxPrice) &&
       (!f.saleOnly || isOnSale(w)) &&
-      (!f.sampleOnly || w.sampleAudioAvailable),
+      (!f.sampleOnly || w.sampleAudioAvailable === true),
   );
 }
 

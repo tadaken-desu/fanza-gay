@@ -18,12 +18,8 @@ export function favoriteKey(kind: FavoriteKind, slug: string): string {
 // 保存形式を変えたときに古いデータを読まないよう、キー名にバージョンを入れる。
 const STORAGE_KEY = "bl-asmr-db:favorites:v1";
 
-/** 初回訪問時にデモが寂しくならないよう、いくつか登録済みにしておく。 */
-const DEFAULT_FAVORITES = [
-  favoriteKey("cv", "konoe-yoritada"),
-  favoriteKey("circle", "aroitei"),
-];
-const DEFAULT_SNAPSHOT = JSON.stringify(DEFAULT_FAVORITES);
+/** 初回訪問時は未登録(トップに「ハートで登録してください」の案内が出る) */
+const DEFAULT_SNAPSHOT = "[]";
 
 const listeners = new Set<() => void>();
 

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { tagLabel } from "@/lib/tags";
@@ -11,8 +12,29 @@ function hashOf(id: string): number {
   return h;
 }
 
-/** 画像が入るまでの代替ビジュアル。音声作品らしく波形風のバーを描く。 */
+/**
+ * カバー画像。サムネイルがある作品は実画像、ない作品のみ波形風の代替ビジュアル。
+ * 画像は FANZA の 560x420(4:3)なので、枠も 4:3 に揃える。
+ */
 function Cover({ work }: { work: Work }) {
+  if (work.thumbnailUrl) {
+    return (
+      <div className="relative aspect-[4/3] overflow-hidden bg-surface">
+        <Image
+          src={work.thumbnailUrl}
+          alt=""
+          fill
+          sizes="(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 100vw"
+          className="object-cover transition duration-300 group-hover:scale-[1.03]"
+        />
+      </div>
+    );
+  }
+  return <WaveCover work={work} />;
+}
+
+/** 画像がない作品の代替ビジュアル。音声作品らしく波形風のバーを描く。 */
+function WaveCover({ work }: { work: Work }) {
   const h = hashOf(work.id);
   const hue = h % 360;
   const bars = Array.from({ length: 28 }, (_, i) =>
@@ -21,7 +43,7 @@ function Cover({ work }: { work: Work }) {
 
   return (
     <div
-      className="relative flex aspect-[16/9] items-end justify-center gap-[3px] overflow-hidden px-4 pb-4"
+      className="relative flex aspect-[4/3] items-end justify-center gap-[3px] overflow-hidden px-4 pb-4"
       style={{
         background: `linear-gradient(135deg, hsl(${hue} 50% 24%), hsl(${(hue + 60) % 360} 55% 10%))`,
       }}
@@ -72,7 +94,7 @@ export function WorkCard({ work }: { work: Work }) {
             </span>
           )}
         </div>
-        {work.sampleAudioAvailable && (
+        {work.sampleAudioAvailable === true && (
           <span className="absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium text-foreground backdrop-blur">
             <svg viewBox="0 0 24 24" className="size-3" fill="currentColor" aria-hidden="true">
               <path d="M8 5v14l11-7z" />

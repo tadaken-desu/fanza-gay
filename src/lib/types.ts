@@ -33,8 +33,13 @@ export type Work = {
 
   /** FANZA 作品ページへのアフィリエイトリンク */
   affiliateUrl: string;
-  /** 試聴ボイスの有無 */
-  sampleAudioAvailable: boolean;
+  /** 作品サムネイル画像(https)。ない場合は null(UI は波形カバーを表示) */
+  thumbnailUrl: string | null;
+  /**
+   * 試聴ボイスの有無。FANZA API には対応フィールドがないため、
+   * 実データでは null(不明)。UI は true のときだけ「試聴あり」を出す。
+   */
+  sampleAudioAvailable: boolean | null;
 
   relationTags: RelationTagSlug[];
   situationTags: SituationTagSlug[];
