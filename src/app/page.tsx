@@ -1,69 +1,171 @@
-import Image from "next/image";
+import { Suspense } from "react";
+import { FavoriteDeals } from "@/components/FavoriteDeals";
+import { FilterSidebar } from "@/components/FilterSidebar";
+import { LinkGroups } from "@/components/LinkGroups";
+import { WorkCard } from "@/components/WorkCard";
+import { hasActiveFilters, parseFilters } from "@/lib/filters";
+import { RELATION_TAGS, SITUATION_TAGS, tagLabel } from "@/lib/tags";
+import {
+  countTags,
+  filterWorks,
+  getAllWorks,
+  getCircles,
+  getCvs,
+  isDroppedToday,
+} from "@/lib/works";
 
-export default function Home() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default function Home({ searchParams }: { searchParams: SearchParams }) {
+  const all = getAllWorks();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
+      <header className="mb-8">
+        <h1 className="text-2xl font-black sm:text-3xl">
+          ゲイ・BL向け同人音声の
+          <span className="text-accent">セール</span>を毎日チェック
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          CV・サークル・シチュエーションタグで探せる同人音声・ASMRのデータベース。お気に入りの値下げをトップでお知らせします。
+        </p>
+      </header>
+
+      <FavoriteDeals droppedToday={all.filter(isDroppedToday)} />
+
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+        {/* searchParams はリクエスト時データなので、読む部分を Suspense で囲む */}
+        <Suspense fallback={<SidebarSkeleton />}>
+          <Sidebar searchParams={searchParams} />
+        </Suspense>
+
+        <Suspense fallback={<ResultsSkeleton />}>
+          <Results searchParams={searchParams} />
+        </Suspense>
+      </div>
+
+      <Directory />
+    </main>
+  );
+}
+
+async function Sidebar({ searchParams }: { searchParams: SearchParams }) {
+  const filters = parseFilters(await searchParams);
+  const all = getAllWorks();
+
+  return (
+    <FilterSidebar
+      filters={filters}
+      relCounts={countTags(all, "relationTags")}
+      sitCounts={countTags(all, "situationTags")}
+      resultCount={filterWorks(all, filters).length}
+    />
+  );
+}
+
+async function Results({ searchParams }: { searchParams: SearchParams }) {
+  const filters = parseFilters(await searchParams);
+  const results = filterWorks(getAllWorks(), filters);
+  const selected = [...filters.rel, ...filters.sit].map(tagLabel);
+  const joiner = filters.mode === "any" ? " / " : " × ";
+
+  return (
+    <section aria-labelledby="results-heading" className="min-w-0">
+      <div className="mb-4">
+        <p className="text-xs font-semibold tracking-widest text-accent uppercase">
+          Browse
+        </p>
+        <h2 id="results-heading" className="text-xl font-black">
+          {hasActiveFilters(filters)
+            ? `${selected.join(joiner) || "条件指定"} の作品`
+            : "すべての作品"}
+          <span className="ml-3 text-sm font-normal text-muted">
+            {results.length}件
+          </span>
+        </h2>
+      </div>
+
+      {results.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {results.map((w) => (
+            <WorkCard key={w.id} work={w} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-line bg-surface/50 px-6 py-16 text-center text-sm text-muted">
+          条件に一致する作品がありません。条件を緩めてみてください。
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** pSEO ページへの入口。クローラーとユーザー双方の回遊用。 */
+function Directory() {
+  return (
+    <section aria-labelledby="directory-heading" className="mt-16">
+      <h2 id="directory-heading" className="mb-6 text-xl font-black">
+        CV・サークル・タグから探す
+      </h2>
+      <LinkGroups
+        groups={[
+          {
+            title: "CV(声優)",
+            links: getCvs().map((c) => ({
+              href: `/cv/${c.slug}`,
+              label: c.name,
+              count: c.count,
+            })),
+          },
+          {
+            title: "サークル",
+            links: getCircles().map((c) => ({
+              href: `/circle/${c.slug}`,
+              label: c.name,
+              count: c.count,
+            })),
+          },
+          {
+            title: "関係性・キャラ属性",
+            links: RELATION_TAGS.map((t) => ({
+              href: `/tag/${t.slug}`,
+              label: t.label,
+            })),
+          },
+          {
+            title: "プレイ・音声シチュエーション",
+            links: SITUATION_TAGS.map((t) => ({
+              href: `/tag/${t.slug}`,
+              label: t.label,
+            })),
+          },
+        ]}
+      />
+    </section>
+  );
+}
+
+function SidebarSkeleton() {
+  return (
+    <div
+      className="hidden h-96 animate-pulse rounded-xl border border-line bg-surface lg:block"
+      aria-hidden="true"
+    />
+  );
+}
+
+function ResultsSkeleton() {
+  return (
+    <div
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
+      aria-busy="true"
+    >
+      {Array.from({ length: 6 }, (_, i) => (
+        <div
+          key={i}
+          className="h-80 animate-pulse rounded-xl border border-line bg-surface"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      ))}
     </div>
   );
 }

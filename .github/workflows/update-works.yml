@@ -1,0 +1,59 @@
+name: Update works
+
+# FANZA(DMM) API から作品・価格を取得して src/data/works.json を更新し、
+# 変更があればコミットする。デプロイ先(Vercel など)が push で再ビルドされる想定。
+#
+# 事前設定: リポジトリの Settings > Secrets and variables > Actions に登録
+#   FANZA_API_ID / FANZA_AFFILIATE_ID
+# (任意) Variables: FANZA_FLOOR, FANZA_KEYWORDS など(scripts/fetch-fanza.ts 冒頭を参照)
+
+on:
+  schedule:
+    # 毎日 6:00 JST (21:00 UTC)
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-works
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch from FANZA API
+        run: node scripts/fetch-fanza.ts
+        env:
+          FANZA_API_ID: ${{ secrets.FANZA_API_ID }}
+          FANZA_AFFILIATE_ID: ${{ secrets.FANZA_AFFILIATE_ID }}
+          FANZA_FLOOR: ${{ vars.FANZA_FLOOR }}
+          FANZA_KEYWORDS: ${{ vars.FANZA_KEYWORDS }}
+
+      # 壊れたデータをコミットしないよう、更新後にビルドが通ることを確認する
+      - name: Verify build
+        run: npm run build
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet -- src/data/works.json; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/works.json
+          git commit -m "chore: update works from FANZA API"
+          git push
